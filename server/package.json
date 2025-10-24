@@ -1,0 +1,7 @@
+{
+  "name": "ghostpass-shield",
+  "type": "module",
+  "dependencies": {
+    "nanoid": "^5.0.7"
+  }
+}
