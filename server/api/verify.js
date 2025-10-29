@@ -1,6 +1,7 @@
-// server/api/verify.js — fixed import paths
+// server/api/verify.js — CORS-wrapped
 import { extractFeatures, compareProfiles } from "../lib/model.js";
 import { getProfile, pushEvent } from "../lib/store.js";
+import { withCORS } from "./_cors.js";
 
 const DEFAULT_THRESHOLD = 0.75;
 
@@ -10,12 +11,12 @@ async function parseJSON(req) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-export default async function handler(req, res) {
+async function core(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "method" });
 
   try {
     const { siteKey, userId, events, threshold } = await parseJSON(req);
-    if (!siteKey || !userId || !Array.isArray(events)) {
+    if (!siteKey || !userId || !Array.isArray(events) || events.length === 0) {
       return res.status(400).json({ error: "bad_input" });
     }
 
@@ -47,3 +48,5 @@ export default async function handler(req, res) {
     res.status(500).json({ error: "server" });
   }
 }
+
+export default withCORS(core);
