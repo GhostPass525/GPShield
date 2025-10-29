@@ -1,5 +1,6 @@
-import { extractFeatures, compareProfiles } from "../../lib/model.js";
-import { getProfile, pushEvent } from "../../lib/store.js";
+// server/api/verify.js — fixed import paths
+import { extractFeatures, compareProfiles } from "../lib/model.js";
+import { getProfile, pushEvent } from "../lib/store.js";
 
 const DEFAULT_THRESHOLD = 0.75;
 
@@ -14,8 +15,9 @@ export default async function handler(req, res) {
 
   try {
     const { siteKey, userId, events, threshold } = await parseJSON(req);
-    if (!siteKey || !userId || !Array.isArray(events))
+    if (!siteKey || !userId || !Array.isArray(events)) {
       return res.status(400).json({ error: "bad_input" });
+    }
 
     const profile = getProfile(siteKey, userId);
     if (!profile) return res.status(404).json({ error: "no_profile" });
@@ -41,7 +43,7 @@ export default async function handler(req, res) {
       usedThreshold: th,
     });
   } catch (e) {
-    console.error(e);
+    console.error("Verify API Error:", e);
     res.status(500).json({ error: "server" });
   }
 }
