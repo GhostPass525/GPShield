@@ -1,6 +1,7 @@
-// server/api/enroll.js — fixed import paths
+// server/api/enroll.js — CORS-wrapped
 import { extractFeatures, mergeProfile } from "../lib/model.js";
 import { getProfile, putProfile, pushEvent } from "../lib/store.js";
+import { withCORS } from "./_cors.js";
 
 async function parseJSON(req) {
   const chunks = [];
@@ -8,12 +9,12 @@ async function parseJSON(req) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-export default async function handler(req, res) {
+async function core(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "method" });
 
   try {
     const { siteKey, userId, events } = await parseJSON(req);
-    if (!siteKey || !userId || !Array.isArray(events)) {
+    if (!siteKey || !userId || !Array.isArray(events) || events.length === 0) {
       return res.status(400).json({ error: "bad_input" });
     }
 
@@ -22,19 +23,13 @@ export default async function handler(req, res) {
     const profile = mergeProfile(existing, sample);
     putProfile(siteKey, userId, profile);
 
-    pushEvent(siteKey, {
-      type: "enroll",
-      userId,
-      score: 1,
-      meta: { sample: sample.n },
-    });
+    pushEvent(siteKey, { type: "enroll", userId, score: 1, meta: { sample: sample.n } });
 
-    return res.json({
-      ok: true,
-      profile: { vec: profile.vec, n: profile.n },
-    });
+    return res.json({ ok: true, profile: { vec: profile.vec, n: profile.n } });
   } catch (e) {
     console.error("Enroll API Error:", e);
     res.status(500).json({ error: "server" });
   }
 }
+
+export default withCORS(core);
