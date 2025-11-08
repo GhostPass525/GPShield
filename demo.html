@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>GhostPass — Live Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;background:#0e1116;color:#e8eefb;margin:0}
+    .wrap{max-width:820px;margin:0 auto;padding:24px}
+    h1{margin:0 0 8px}
+    p{color:#cbd6ee}
+    .panel{background:#141922;border:1px solid #232b38;border-radius:12px;padding:16px;margin:16px 0}
+    .row{display:flex;gap:8px;margin:8px 0}
+    button{padding:10px 14px;border:none;border-radius:8px;background:#111723;color:#fff;cursor:pointer}
+    button.primary{background:linear-gradient(135deg,#19e4a8,#14b8ff);color:#051016;font-weight:700}
+    textarea{width:100%;height:140px;background:#0b1018;color:#e8eefb;border:1px solid #232b38;border-radius:8px;padding:10px;box-sizing:border-box}
+    .muted{color:#99a3b3;font-size:14px}
+    .status{margin-top:10px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>GhostPass — Live Typing Demo</h1>
+    <p>Step 1: Click <b>Start</b> and type a sentence below. Click <b>Enroll</b>.<br>Step 2: Click <b>Start</b> again, type again, then <b>Verify</b>.</p>
+
+    <div class="panel">
+      <div class="row">
+        <button id="btnStart">Start</button>
+        <button id="btnEnroll" class="primary">Enroll</button>
+        <button id="btnVerify">Verify</button>
+      </div>
+      <textarea id="box" placeholder="Type here while capture is ON..."></textarea>
+      <div class="muted">Keystrokes captured: <span id="count">0</span></div>
+      <div id="status" class="status"></div>
+    </div>
+
+    <p class="muted">Privacy: we never send raw text—only anonymous timing and key-code events.</p>
+  </div>
+
+  <script>
+    // ---- CONFIG ----
+    const ENDPOINT = "https://gp-shield-25.vercel.app"; // your Vercel Shield URL
+    const SITE_KEY = "default";
+    const USER_ID  = "web-demo-user";
+    // ----------------
+
+    const $ = id => document.getElementById(id);
+    const box = $("box");
+    const status = $("status");
+    const counter = $("count");
+
+    let capturing = false;
+    let events = [];
+    let kd, ku;
+
+    function updateCounter(){ counter.textContent = String(events.length); }
+
+    function startCapture(){
+      if (capturing) return;
+      events = [];
+      const ign = new Set(["Shift","Control","Alt","Meta","CapsLock","Escape"]);
+      kd = e => { if (!ign.has(e.key)) { events.push({t:Date.now(), k:e.code||e.keyCode||0, d:"down"}); updateCounter(); } };
+      ku = e => { if (!ign.has(e.key)) { events.push({t:Date.now(), k:e.code||e.keyCode||0, d:"up"});   updateCounter(); } };
+      box.addEventListener("keydown", kd, { passive:true });
+      box.addEventListener("keyup", ku, { passive:true });
+      capturing = true;
+      status.textContent = "Capturing… type in the box, then press Enroll/Verify.";
+      box.focus();
+    }
+
+    function stopCapture(){
+      if (!capturing) return;
+      box.removeEventListener("keydown", kd);
+      box.removeEventListener("keyup", ku);
+      capturing = false;
+      status.textContent = "Stopped.";
+    }
+
+    $("btnStart").onclick = () => { capturing ? stopCapture() : startCapture(); };
+
+    async function enroll(){
+      if (events.length < 8) { status.textContent = "Please type ≥ 8 keys before Enroll."; return; }
+      try{
+        const r = await fetch(`${ENDPOINT}/api/enroll`, {
+          method:"POST",
+          headers:{ "content-type":"application/json" },
+          body: JSON.stringify({ siteKey:SITE_KEY, userId:USER_ID, events })
+        });
+        if(!r.ok) throw new Error("enroll_failed");
+        const j = await r.json();
+        window._ghostpassProfile = j.profile; // keep for fallback if serverless hops
+        status.textContent = `Enrolled ✓ (sample=${events.length} keys)`;
+        events = []; updateCounter();
+      }catch(e){ console.error(e); status.textContent = "Enroll failed"; }
+    }
+
+    async function verify(){
+      if (events.length < 8) { status.textContent = "Please type ≥ 8 keys before Verify."; return; }
+      try{
+        const body = { siteKey:SITE_KEY, userId:USER_ID, events, threshold:0.72 };
+        if (window._ghostpassProfile) body.profile = window._ghostpassProfile; // client-fallback profile
+        const r = await fetch(`${ENDPOINT}/api/verify`, {
+          method:"POST",
+          headers:{ "content-type":"application/json" },
+          body: JSON.stringify(body)
+        });
+        if(!r.ok){
+          if (r.status === 404) status.textContent = "No profile yet — Enroll first.";
+          else status.textContent = "Verify failed";
+          return;
+        }
+        const j = await r.json();
+        status.textContent = `Verified: ${j.verified} (score=${j.score.toFixed(3)})`;
+        events = []; updateCounter();
+      }catch(e){ console.error(e); status.textContent = "Verify failed"; }
+    }
+
+    $("btnEnroll").onclick = enroll;
+    $("btnVerify").onclick = verify;
+
+    updateCounter();
+  </script>
+</body>
+</html>
