@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>GhostPass — AI Behavioral Identity for Zero-Trust Security</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="GhostPass adds continuous behavioral verification—typing rhythm, mouse dynamics, and interaction patterns—to ensure the right person stays authenticated after login." />
+  <meta name="theme-color" content="#0e1116" />
+  <link rel="icon" href="assets/favicon.png" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <div class="brand">
+        <img src="assets/favicon.png" alt="" class="logo" />
+        <span>GhostPass</span>
+      </div>
+      <nav>
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#demo">Demo</a>
+        <a href="#contact" class="btn small">Request Pilot</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container hero-inner">
+        <div class="hero-copy">
+          <h1>AI Behavioral Identity for Zero-Trust Security</h1>
+          <p class="lead">
+            GhostPass verifies <em>who</em> is at the keyboard—continuously—using typing rhythm and interaction patterns.
+            If behavior shifts, sessions are flagged or locked. No OTPs. No friction.
+          </p>
+          <div class="cta">
+            <a class="btn primary" href="#" onclick="alert('Chrome listing link coming soon');return false;">Try the Chrome Demo</a>
+            <a class="btn" href="assets/GhostPass_Enterprise_Deck.pdf" target="_blank" rel="noopener">View the Deck (PDF)</a>
+          </div>
+          <div class="trust">
+            <span class="pill">Continuous auth</span>
+            <span class="pill">Privacy-first (no raw text)</span>
+            <span class="pill">Drop-in SDK / API</span>
+          </div>
+        </div>
+        <div class="hero-art">
+          <img src="assets/hero.png" alt="GhostPass preview" onerror="this.style.display='none'"/>
+        </div>
+      </div>
+    </section>
+
+    <section id="features" class="features">
+      <div class="container">
+        <h2>Why enterprises use GhostPass</h2>
+        <div class="grid">
+          <div class="card"><h3>Continuous identity</h3><p>Score behavior every few minutes to ensure the right person remains authenticated.</p></div>
+          <div class="card"><h3>Invisible security</h3><p>No codes or push fatigue. Behavioral signals run silently.</p></div>
+          <div class="card"><h3>Privacy by design</h3><p>No raw typed content is ever sent—only timing vectors.</p></div>
+          <div class="card"><h3>Enterprise ready</h3><p>SDK + API, logs, policies, and SSO integrations (planned).</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="how" class="how">
+      <div class="container">
+        <h2>How it works</h2>
+        <ol class="steps">
+          <li><strong>SDK</strong> captures typing timings (no content).</li>
+          <li><strong>Shield API</strong> extracts features.</li>
+          <li><strong>AI engine</strong> returns a trust score (0–1).</li>
+          <li><strong>Policy</strong> decides: allow, step-up, or lock.</li>
+        </ol>
+        <div class="diagram">
+          <img src="assets/diagram.png" alt="diagram" onerror="this.style.display='none'"/>
+        </div>
+      </div>
+    </section>
+
+    <section id="demo" class="demo">
+      <div class="container demo-inner">
+        <div>
+          <h2>See it in action</h2>
+          <p>Install the free Chrome demo and watch GhostPass recognize your typing pattern in seconds.</p>
+          <div class="cta">
+            <a class="btn primary" href="#" onclick="alert('Chrome listing link coming soon');return false;">Install Demo</a>
+            <a class="btn" href="assets/GhostPass_Enterprise_Deck.pdf" target="_blank" rel="noopener">Download Deck</a>
+          </div>
+          <ul class="bullets">
+            <li>Typing biometrics (keystroke dynamics)</li>
+            <li>Zero friction for end users</li>
+            <li>Add-on signal for zero-trust policies</li>
+          </ul>
+        </div>
+        <div class="demo-shot">
+          <img src="assets/demo.png" alt="demo" onerror="this.style.display='none'"/>
+        </div>
+      </div>
+    </section>
+
+    <section id="contact" class="contact">
+      <div class="container contact-inner">
+        <h2>Request a pilot</h2>
+        <p>We’ll run a 2-week pilot on 10–50 workstations to measure accuracy and false positives in your environment.</p>
+        <form class="contact-form" action="mailto:hello@ghostpass.ai" method="post" enctype="text/plain">
+          <div class="row">
+            <input required type="text" name="name" placeholder="Your name" />
+            <input required type="email" name="email" placeholder="Work email" />
+          </div>
+          <input type="text" name="company" placeholder="Company" />
+          <textarea name="message" placeholder="What’s your use case?"></textarea>
+          <button class="btn primary" type="submit">Request pilot</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div>© <span id="y"></span> GhostPass</div>
+      <nav>
+        <a href="privacy.html">Privacy</a>
+        <a href="assets/GhostPass_Enterprise_Deck.pdf" target="_blank" rel="noopener">Deck</a>
+        <a href="https://github.com/GhostPass525" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script>document.getElementById('y').textContent=new Date().getFullYear();</script>
+</body>
+</html>
