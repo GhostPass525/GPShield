@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>GhostPass — Live Demo (Multi-User, Improved)</title>
+  <title>GhostPass — Live Demo (Multi-User, Robust)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;background:#0e1116;color:#e8eefb;margin:0}
-    .wrap{max-width:820px;margin:0 auto;padding:24px}
+    .wrap{max-width:880px;margin:0 auto;padding:24px}
     h1{margin:0 0 8px}
     p{color:#cbd6ee}
     .panel{background:#141922;border:1px solid #232b38;border-radius:12px;padding:16px;margin:16px 0}
@@ -20,11 +20,12 @@
     .small{font-size:13px;color:#9fb0c9}
     .controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
     .hidden { display:none; }
+    code{background:#0b1018;padding:6px;border-radius:6px;border:1px solid #232b38;display:block;margin-top:8px}
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>GhostPass — Live Typing Demo (Multi-User)</h1>
+    <h1>GhostPass — Live Typing Demo (Multi-User, Robust)</h1>
     <p>Enter a <b>User ID</b>, click <b>Start Capture</b>, type in the box, then click <b>Enroll</b>. Afterwards capture a fresh sample and click <b>Verify</b>.</p>
 
     <div class="panel">
@@ -43,6 +44,7 @@
 
       <textarea id="box" placeholder="Type here while capture is ON..."></textarea>
       <div id="status" class="status"></div>
+      <div class="small" style="margin-top:8px">Debug: open Console (DevTools) for network & stored-profile logs.</div>
     </div>
 
     <p class="muted">Privacy: we never send raw text — only anonymous timing & key-code events.</p>
@@ -51,6 +53,84 @@
 <script>
 /* CONFIG - set your Vercel endpoint */
 const ENDPOINT = "https://gp-shield-25.vercel.app"; // <- update if different
+
+/* ---------- Simple client-side feature extractor (matches server) ---------- */
+/* This lets the demo compute a profile locally if the server doesn't return one. */
+
+function extractFeaturesFromEvents(events) {
+  // events: [{t:ms, k:keyCode|string, d:'down'|'up'}]
+  const down = new Map();
+  const holdTimes = [];
+  const pressTimes = [];
+  for (const e of events) {
+    if (e.d === 'down') {
+      if (down.has(e.k)) continue;
+      down.set(e.k, e.t);
+      pressTimes.push(e.t);
+    } else if (e.d === 'up') {
+      const t0 = down.get(e.k);
+      if (t0 != null) {
+        holdTimes.push(e.t - t0);
+        down.delete(e.k);
+      }
+    }
+  }
+  const iki = [];
+  for (let i = 1; i < pressTimes.length; i++) iki.push(pressTimes[i] - pressTimes[i-1]);
+
+  const stats = (arr) => {
+    if (!arr.length) return { mean: 0, std: 0 };
+    const mean = arr.reduce((a,b)=>a+b,0)/arr.length;
+    const std = Math.sqrt(arr.reduce((s,x)=>s+(x-mean)*(x-mean),0) / Math.max(1,arr.length-1));
+    return { mean, std };
+  };
+
+  const h = stats(holdTimes);
+  const i = stats(iki);
+  return { vec: [h.mean, h.std, i.mean, i.std], n: { ht: holdTimes.length, iki: iki.length } };
+}
+
+/* ---------- persistent savedProfiles (localStorage + in-memory) ---------- */
+const LS_PREFIX = "gp_profile::";
+const savedProfiles = new Map();
+window._ghostpassSavedProfiles = {}; // debugging handle
+
+// load existing profiles from localStorage
+for (let i=0;i<localStorage.length;i++){
+  const k = localStorage.key(i);
+  if (!k || !k.startsWith(LS_PREFIX)) continue;
+  try {
+    const val = JSON.parse(localStorage.getItem(k));
+    const key = k.replace(LS_PREFIX, "");
+    savedProfiles.set(key, val);
+    window._ghostpassSavedProfiles[key] = val;
+  } catch(e){ console.warn("bad profile in ls", k, e); }
+}
+
+function persistProfile(siteKey, userId, profile){
+  const key = `${siteKey}::${userId}`;
+  savedProfiles.set(key, profile);
+  window._ghostpassSavedProfiles[key] = profile;
+  try {
+    localStorage.setItem(LS_PREFIX + key, JSON.stringify(profile));
+    console.log("persistProfile -> saved to localStorage:", LS_PREFIX + key);
+  } catch(e){ console.warn("persist failed", e); }
+}
+
+function getSavedProfile(siteKey, userId){
+  const key = `${siteKey}::${userId}`;
+  if (savedProfiles.has(key)) return savedProfiles.get(key);
+  const raw = localStorage.getItem(LS_PREFIX + key);
+  if (!raw) return null;
+  try {
+    const val = JSON.parse(raw);
+    savedProfiles.set(key, val);
+    window._ghostpassSavedProfiles[key] = val;
+    return val;
+  } catch(e){ return null; }
+}
+
+/* ---------- UI + capture logic ---------- */
 
 const $ = id => document.getElementById(id);
 const box = $("box");
@@ -67,13 +147,9 @@ let capturing = false;
 let events = [];
 let kd, ku;
 
-// local fallback profiles to survive serverless instance switching
-const savedProfiles = new Map(); // key -> profile
-
-function keyFor(siteKey, userId){ return `${siteKey}::${userId}`; }
 function updateCounter(){ counter.textContent = String(events.length); }
+function keyFor(siteKey, userId){ return `${siteKey}::${userId}`; }
 
-// safer: trim user id
 function getIds(){
   const userId = (userInput.value || "").trim();
   const siteKey = (siteInput.value || "").trim() || "default";
@@ -86,8 +162,8 @@ function startCapture(){
   events = [];
   updateCounter();
   const ign = new Set(["Shift","Control","Alt","Meta","CapsLock","Escape"]);
-  kd = e => { if (!ign.has(e.key)) { events.push({ t: Date.now(), k: e.code || e.keyCode || 0, d: "down" }); updateCounter(); } };
-  ku = e => { if (!ign.has(e.key)) { events.push({ t: Date.now(), k: e.code || e.keyCode || 0, d: "up" }); updateCounter(); } };
+  kd = e => { if (!ign.has(e.key)) { events.push({ t: Date.now(), k: e.code || e.key || 0, d: "down" }); updateCounter(); } };
+  ku = e => { if (!ign.has(e.key)) { events.push({ t: Date.now(), k: e.code || e.key || 0, d: "up" }); updateCounter(); } };
   box.addEventListener("keydown", kd, { passive: true });
   box.addEventListener("keyup", ku, { passive: true });
   capturing = true;
@@ -95,6 +171,7 @@ function startCapture(){
   btnStop.classList.remove("hidden");
   status.textContent = "Capturing… type in the box (then click Enroll or Verify).";
   box.focus();
+  console.log("capture started");
 }
 
 function stopCapture(){
@@ -104,92 +181,117 @@ function stopCapture(){
   capturing = false;
   btnStop.classList.add("hidden");
   btnStart.classList.remove("hidden");
-  status.textContent = "Stopped. You can start again or Enroll/Verify with captured sample.";
+  status.textContent = "Stopped. Use Enroll or Verify with the captured sample.";
+  console.log("capture stopped - events:", events.length);
 }
 
-// clear the input box and events after action (so users don't reuse same text)
+// clear typed text/session after action
 function clearSession(){
   events = [];
   updateCounter();
   box.value = "";
-  // keep userId/siteKey so multiple enrolls are easy
 }
 
-// network helpers
+/* POST helper that returns response object and JSON (if any) */
 async function postJSON(path, body){
-  const url = `${ENDPOINT}${path}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  return res;
+  const url = ENDPOINT + path;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    let json = null;
+    try { json = await res.json(); } catch(e){ /* no json */ }
+    return { ok: res.ok, status: res.status, json, text: json ? null : await res.text().catch(()=>null) };
+  } catch (e) {
+    return { ok: false, status: 0, json: null, text: String(e) };
+  }
 }
 
-btnStart.onclick = startCapture;
-btnStop.onclick = stopCapture;
-
+/* ENROLL */
 btnEnroll.onclick = async () => {
   try {
     const { userId, siteKey } = getIds();
     if (events.length < 8) { status.textContent = "Please type at least 8 keys before Enroll."; return; }
     status.textContent = `Enrolling ${userId}…`;
-    // send enroll to server
+    console.log("Enroll: sending events", events.length);
+
+    // send to server
     const res = await postJSON("/api/enroll", { siteKey, userId, events });
-    if (!res.ok) {
-      // show server error message if any
-      const t = await res.text().catch(()=>"");
-      console.error("Enroll failed:", res.status, t);
-      status.textContent = `Enroll failed (server ${res.status})`;
-      return;
+
+    if (res.ok && res.json && res.json.profile) {
+      // server returned a profile — use it
+      persistProfile(siteKey, userId, res.json.profile);
+      status.textContent = `Enrolled ${userId} ✓ (server profile)`;
+      console.log("Enroll success (server):", res.json.profile);
+    } else {
+      // server didn't return a profile (or returned non-ok). compute locally and persist.
+      console.warn("Enroll: server did not return profile or failed:", res.status, res.json || res.text);
+      const localProfile = extractFeaturesFromEvents(events);
+      persistProfile(siteKey, userId, localProfile);
+      status.textContent = `Enrolled ${userId} ✓ (local fallback)`;
+      console.log("Enroll fallback: stored local profile", localProfile);
     }
-    const j = await res.json();
-    // save profile locally for fallback
-    savedProfiles.set(keyFor(siteKey,userId), j.profile);
-    status.textContent = `Enrolled ${userId} ✓ (sample=${events.length} keys)`;
     clearSession();
-    // ensure capture is stopped to avoid accidental extra keys
     if (capturing) stopCapture();
   } catch (e) {
     console.error("Enroll error:", e);
     if (e.message === "no_user") status.textContent = "Enter a User ID before enrolling.";
-    else status.textContent = "Enroll failed (network).";
+    else status.textContent = "Enroll failed (unexpected).";
   }
 };
 
+/* VERIFY */
 btnVerify.onclick = async () => {
   try {
     const { userId, siteKey } = getIds();
     if (events.length < 8) { status.textContent = "Please type at least 8 keys before Verify."; return; }
     status.textContent = `Verifying ${userId}…`;
+    console.log("Verify: sending events", events.length);
+
+    // always include client-saved profile as fallback if available
+    const profile = getSavedProfile(siteKey, userId);
     const body = { siteKey, userId, events, threshold: 0.72 };
-    // include client-side profile if we have it (fallback)
-    const prof = savedProfiles.get(keyFor(siteKey,userId));
-    if (prof) body.profile = prof;
-    const res = await postJSON("/api/verify", body);
-    if (!res.ok) {
-      const t = await res.text().catch(()=>"");
-      console.error("Verify failed:", res.status, t);
-      if (res.status === 404) status.textContent = `No profile for ${userId} — Enroll first.`;
-      else status.textContent = `Verify failed (server ${res.status})`;
-      return;
+    if (profile) {
+      body.profile = profile;
+      console.log("Verify: including client profile fallback", keyFor(siteKey,userId));
+    } else {
+      console.log("Verify: no client profile available");
     }
-    const j = await res.json();
-    status.textContent = `Verified for ${userId}: ${j.verified} (score=${j.score.toFixed(3)})`;
-    // clear typed text/session so next sample is fresh
+
+    const res = await postJSON("/api/verify", body);
+
+    if (res.ok && res.json) {
+      const j = res.json;
+      status.textContent = `Verified for ${userId}: ${j.verified} (score=${(j.score||0).toFixed(3)})`;
+      console.log("Verify result:", j);
+    } else {
+      console.warn("Verify failed:", res.status, res.json || res.text);
+      if (res.status === 404 && (!profile)) {
+        status.textContent = `No profile for ${userId} — Enroll first.`;
+      } else if (res.status === 404 && profile) {
+        // server 404 even though we sent profile — show message and include server text
+        status.textContent = `Verify failed (server 404). Sent local profile as fallback — check console.`;
+      } else {
+        status.textContent = `Verify failed (server ${res.status})`;
+      }
+    }
     clearSession();
     if (capturing) stopCapture();
   } catch (e) {
     console.error("Verify error:", e);
     if (e.message === "no_user") status.textContent = "Enter a User ID before verifying.";
-    else status.textContent = "Verify failed (network).";
+    else status.textContent = "Verify failed (unexpected).";
   }
 };
 
-// small UX: press Enter in userId field to focus box so user can start typing quickly
+// small UX: allow Enter in userId to focus textarea
 userInput.addEventListener("keydown", (e)=>{ if (e.key === "Enter") { box.focus(); e.preventDefault(); } });
 
-// initialize UI state
+// expose quick debug helper
+window.showGhostProfiles = () => { console.log("savedProfiles keys:", Array.from(savedProfiles.keys())); console.log(window._ghostpassSavedProfiles); };
+
 updateCounter();
 btnStop.classList.add("hidden");
 </script>
