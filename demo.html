@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>GhostPass — Live Demo (Multi-User)</title>
+  <title>GhostPass — Live Demo (Multi-User, Improved)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;background:#0e1116;color:#e8eefb;margin:0}
@@ -17,137 +17,181 @@
     textarea{width:100%;height:140px;background:#0b1018;color:#e8eefb;border:1px solid #232b38;border-radius:8px;padding:10px;box-sizing:border-box}
     .muted{color:#99a3b3;font-size:14px}
     .status{margin-top:10px}
+    .small{font-size:13px;color:#9fb0c9}
+    .controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .hidden { display:none; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <h1>GhostPass — Live Typing Demo (Multi-User)</h1>
-    <p>Step 1: Enter a <b>User ID</b>, click <b>Start</b> and type below, then <b>Enroll</b>.<br>Step 2: Click <b>Start</b> again, type again, then <b>Verify</b>.</p>
+    <p>Enter a <b>User ID</b>, click <b>Start Capture</b>, type in the box, then click <b>Enroll</b>. Afterwards capture a fresh sample and click <b>Verify</b>.</p>
 
     <div class="panel">
       <div class="row">
         <input id="userId" placeholder="User ID (e.g., alice, bob)" />
-        <!-- Optional: keep as 'default' for now; you can segment tenants later -->
         <input id="siteKey" placeholder="Site Key" value="default" />
       </div>
 
-      <div class="row">
-        <button id="btnStart">Start</button>
+      <div class="row controls">
+        <button id="btnStart">Start Capture</button>
+        <button id="btnStop" class="hidden">Stop Capture</button>
         <button id="btnEnroll" class="primary">Enroll</button>
         <button id="btnVerify">Verify</button>
+        <div class="small" id="hint">Keystrokes captured: <span id="count">0</span></div>
       </div>
 
       <textarea id="box" placeholder="Type here while capture is ON..."></textarea>
-      <div class="muted">Keystrokes captured: <span id="count">0</span></div>
       <div id="status" class="status"></div>
     </div>
 
-    <p class="muted">Privacy: we never send raw text—only anonymous timing & key-code events.</p>
+    <p class="muted">Privacy: we never send raw text — only anonymous timing & key-code events.</p>
   </div>
 
-  <script>
-    // ---- CONFIG ----
-    const ENDPOINT = "https://gp-shield-25.vercel.app"; // your Vercel Shield URL
-    // ----------------
+<script>
+/* CONFIG - set your Vercel endpoint */
+const ENDPOINT = "https://gp-shield-25.vercel.app"; // <- update if different
 
-    const $ = id => document.getElementById(id);
-    const box = $("box");
-    const status = $("status");
-    const counter = $("count");
-    const userInput = $("userId");
-    const siteInput = $("siteKey");
+const $ = id => document.getElementById(id);
+const box = $("box");
+const status = $("status");
+const counter = $("count");
+const userInput = $("userId");
+const siteInput = $("siteKey");
+const btnStart = $("btnStart");
+const btnStop = $("btnStop");
+const btnEnroll = $("btnEnroll");
+const btnVerify = $("btnVerify");
 
-    let capturing = false;
-    let events = [];
-    let kd, ku;
+let capturing = false;
+let events = [];
+let kd, ku;
 
-    // Keep last enrolled profile PER USER (fallback for serverless)
-    const savedProfiles = new Map(); // key: siteKey:userId -> profile
+// local fallback profiles to survive serverless instance switching
+const savedProfiles = new Map(); // key -> profile
 
-    function keyFor(siteKey, userId){ return `${siteKey}::${userId}`; }
+function keyFor(siteKey, userId){ return `${siteKey}::${userId}`; }
+function updateCounter(){ counter.textContent = String(events.length); }
 
-    function updateCounter(){ counter.textContent = String(events.length); }
+// safer: trim user id
+function getIds(){
+  const userId = (userInput.value || "").trim();
+  const siteKey = (siteInput.value || "").trim() || "default";
+  if (!userId) throw new Error("no_user");
+  return { userId, siteKey };
+}
 
-    function getIds(){
-      const userId = (userInput.value || "").trim();
-      const siteKey = (siteInput.value || "").trim() || "default";
-      if (!userId) throw new Error("no_user");
-      return { userId, siteKey };
+function startCapture(){
+  if (capturing) return;
+  events = [];
+  updateCounter();
+  const ign = new Set(["Shift","Control","Alt","Meta","CapsLock","Escape"]);
+  kd = e => { if (!ign.has(e.key)) { events.push({ t: Date.now(), k: e.code || e.keyCode || 0, d: "down" }); updateCounter(); } };
+  ku = e => { if (!ign.has(e.key)) { events.push({ t: Date.now(), k: e.code || e.keyCode || 0, d: "up" }); updateCounter(); } };
+  box.addEventListener("keydown", kd, { passive: true });
+  box.addEventListener("keyup", ku, { passive: true });
+  capturing = true;
+  btnStart.classList.add("hidden");
+  btnStop.classList.remove("hidden");
+  status.textContent = "Capturing… type in the box (then click Enroll or Verify).";
+  box.focus();
+}
+
+function stopCapture(){
+  if (!capturing) return;
+  box.removeEventListener("keydown", kd);
+  box.removeEventListener("keyup", ku);
+  capturing = false;
+  btnStop.classList.add("hidden");
+  btnStart.classList.remove("hidden");
+  status.textContent = "Stopped. You can start again or Enroll/Verify with captured sample.";
+}
+
+// clear the input box and events after action (so users don't reuse same text)
+function clearSession(){
+  events = [];
+  updateCounter();
+  box.value = "";
+  // keep userId/siteKey so multiple enrolls are easy
+}
+
+// network helpers
+async function postJSON(path, body){
+  const url = `${ENDPOINT}${path}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  return res;
+}
+
+btnStart.onclick = startCapture;
+btnStop.onclick = stopCapture;
+
+btnEnroll.onclick = async () => {
+  try {
+    const { userId, siteKey } = getIds();
+    if (events.length < 8) { status.textContent = "Please type at least 8 keys before Enroll."; return; }
+    status.textContent = `Enrolling ${userId}…`;
+    // send enroll to server
+    const res = await postJSON("/api/enroll", { siteKey, userId, events });
+    if (!res.ok) {
+      // show server error message if any
+      const t = await res.text().catch(()=>"");
+      console.error("Enroll failed:", res.status, t);
+      status.textContent = `Enroll failed (server ${res.status})`;
+      return;
     }
+    const j = await res.json();
+    // save profile locally for fallback
+    savedProfiles.set(keyFor(siteKey,userId), j.profile);
+    status.textContent = `Enrolled ${userId} ✓ (sample=${events.length} keys)`;
+    clearSession();
+    // ensure capture is stopped to avoid accidental extra keys
+    if (capturing) stopCapture();
+  } catch (e) {
+    console.error("Enroll error:", e);
+    if (e.message === "no_user") status.textContent = "Enter a User ID before enrolling.";
+    else status.textContent = "Enroll failed (network).";
+  }
+};
 
-    function startCapture(){
-      if (capturing) return;
-      events = [];
-      const ign = new Set(["Shift","Control","Alt","Meta","CapsLock","Escape"]);
-      kd = e => { if (!ign.has(e.key)) { events.push({t:Date.now(), k:e.code||e.keyCode||0, d:"down"}); updateCounter(); } };
-      ku = e => { if (!ign.has(e.key)) { events.push({t:Date.now(), k:e.code||e.keyCode||0, d:"up"});   updateCounter(); } };
-      box.addEventListener("keydown", kd, { passive:true });
-      box.addEventListener("keyup", ku, { passive:true });
-      capturing = true;
-      status.textContent = "Capturing… type in the box, then press Enroll/Verify.";
-      box.focus();
+btnVerify.onclick = async () => {
+  try {
+    const { userId, siteKey } = getIds();
+    if (events.length < 8) { status.textContent = "Please type at least 8 keys before Verify."; return; }
+    status.textContent = `Verifying ${userId}…`;
+    const body = { siteKey, userId, events, threshold: 0.72 };
+    // include client-side profile if we have it (fallback)
+    const prof = savedProfiles.get(keyFor(siteKey,userId));
+    if (prof) body.profile = prof;
+    const res = await postJSON("/api/verify", body);
+    if (!res.ok) {
+      const t = await res.text().catch(()=>"");
+      console.error("Verify failed:", res.status, t);
+      if (res.status === 404) status.textContent = `No profile for ${userId} — Enroll first.`;
+      else status.textContent = `Verify failed (server ${res.status})`;
+      return;
     }
+    const j = await res.json();
+    status.textContent = `Verified for ${userId}: ${j.verified} (score=${j.score.toFixed(3)})`;
+    // clear typed text/session so next sample is fresh
+    clearSession();
+    if (capturing) stopCapture();
+  } catch (e) {
+    console.error("Verify error:", e);
+    if (e.message === "no_user") status.textContent = "Enter a User ID before verifying.";
+    else status.textContent = "Verify failed (network).";
+  }
+};
 
-    function stopCapture(){
-      if (!capturing) return;
-      box.removeEventListener("keydown", kd);
-      box.removeEventListener("keyup", ku);
-      capturing = false;
-      status.textContent = "Stopped.";
-    }
+// small UX: press Enter in userId field to focus box so user can start typing quickly
+userInput.addEventListener("keydown", (e)=>{ if (e.key === "Enter") { box.focus(); e.preventDefault(); } });
 
-    $("btnStart").onclick = () => { capturing ? stopCapture() : startCapture(); };
-
-    async function enroll(){
-      try{
-        const { userId, siteKey } = getIds();
-        if (events.length < 8) { status.textContent = "Please type ≥ 8 keys before Enroll."; return; }
-        const r = await fetch(`${ENDPOINT}/api/enroll`, {
-          method:"POST",
-          headers:{ "content-type":"application/json" },
-          body: JSON.stringify({ siteKey, userId, events })
-        });
-        if(!r.ok) throw new Error("enroll_failed");
-        const j = await r.json();
-        savedProfiles.set(keyFor(siteKey,userId), j.profile);
-        status.textContent = `Enrolled ${userId} ✓ (sample=${events.length} keys)`;
-        events = []; updateCounter();
-      }catch(e){
-        if (e.message === "no_user") status.textContent = "Enter a User ID first.";
-        else { console.error(e); status.textContent = "Enroll failed"; }
-      }
-    }
-
-    async function verify(){
-      try{
-        const { userId, siteKey } = getIds();
-        if (events.length < 8) { status.textContent = "Please type ≥ 8 keys before Verify."; return; }
-        const body = { siteKey, userId, events, threshold: 0.72 };
-        const prof = savedProfiles.get(keyFor(siteKey,userId));
-        if (prof) body.profile = prof; // client fallback if serverless hops
-        const r = await fetch(`${ENDPOINT}/api/verify`, {
-          method:"POST",
-          headers:{ "content-type":"application/json" },
-          body: JSON.stringify(body)
-        });
-        if(!r.ok){
-          if (r.status === 404) status.textContent = `No profile for ${userId} yet — Enroll first.`;
-          else status.textContent = "Verify failed";
-          return;
-        }
-        const j = await r.json();
-        status.textContent = `Verified for ${userId}: ${j.verified} (score=${j.score.toFixed(3)})`;
-        events = []; updateCounter();
-      }catch(e){
-        if (e.message === "no_user") status.textContent = "Enter a User ID first.";
-        else { console.error(e); status.textContent = "Verify failed"; }
-      }
-    }
-
-    $("btnEnroll").onclick = enroll;
-    $("btnVerify").onclick = verify;
-
-    updateCounter();
-  </script>
+// initialize UI state
+updateCounter();
+btnStop.classList.add("hidden");
+</script>
 </body>
 </html>
