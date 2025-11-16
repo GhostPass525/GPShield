@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>GhostPass — Live Demo (Multi-User, Robust)</title>
+  <title>GhostPass — Live Demo (Robust)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;background:#0e1116;color:#e8eefb;margin:0}
@@ -25,7 +25,7 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>GhostPass — Live Typing Demo (Multi-User, Robust)</h1>
+    <h1>GhostPass — Live Typing Demo (Robust)</h1>
     <p>Enter a <b>User ID</b>, click <b>Start Capture</b>, type in the box, then click <b>Enroll</b>. Afterwards capture a fresh sample and click <b>Verify</b>.</p>
 
     <div class="panel">
@@ -44,7 +44,7 @@
 
       <textarea id="box" placeholder="Type here while capture is ON..."></textarea>
       <div id="status" class="status"></div>
-      <div class="small" style="margin-top:8px">Debug: open Console (DevTools) for network & stored-profile logs.</div>
+      <div class="small" style="margin-top:8px">Debug: open DevTools → Console for network & stored-profile logs.</div>
     </div>
 
     <p class="muted">Privacy: we never send raw text — only anonymous timing & key-code events.</p>
@@ -54,11 +54,8 @@
 /* CONFIG - set your Vercel endpoint */
 const ENDPOINT = "https://gp-shield-25.vercel.app"; // <- update if different
 
-/* ---------- Simple client-side feature extractor (matches server) ---------- */
-/* This lets the demo compute a profile locally if the server doesn't return one. */
-
+/* ---------- Feature extractor (matches server model) ---------- */
 function extractFeaturesFromEvents(events) {
-  // events: [{t:ms, k:keyCode|string, d:'down'|'up'}]
   const down = new Map();
   const holdTimes = [];
   const pressTimes = [];
@@ -93,9 +90,9 @@ function extractFeaturesFromEvents(events) {
 /* ---------- persistent savedProfiles (localStorage + in-memory) ---------- */
 const LS_PREFIX = "gp_profile::";
 const savedProfiles = new Map();
-window._ghostpassSavedProfiles = {}; // debugging handle
+window._ghostpassSavedProfiles = {};
 
-// load existing profiles from localStorage
+// load from localStorage
 for (let i=0;i<localStorage.length;i++){
   const k = localStorage.key(i);
   if (!k || !k.startsWith(LS_PREFIX)) continue;
@@ -131,7 +128,6 @@ function getSavedProfile(siteKey, userId){
 }
 
 /* ---------- UI + capture logic ---------- */
-
 const $ = id => document.getElementById(id);
 const box = $("box");
 const status = $("status");
@@ -192,7 +188,7 @@ function clearSession(){
   box.value = "";
 }
 
-/* POST helper that returns response object and JSON (if any) */
+/* POST helper */
 async function postJSON(path, body){
   const url = ENDPOINT + path;
   try {
@@ -221,12 +217,10 @@ btnEnroll.onclick = async () => {
     const res = await postJSON("/api/enroll", { siteKey, userId, events });
 
     if (res.ok && res.json && res.json.profile) {
-      // server returned a profile — use it
       persistProfile(siteKey, userId, res.json.profile);
       status.textContent = `Enrolled ${userId} ✓ (server profile)`;
       console.log("Enroll success (server):", res.json.profile);
     } else {
-      // server didn't return a profile (or returned non-ok). compute locally and persist.
       console.warn("Enroll: server did not return profile or failed:", res.status, res.json || res.text);
       const localProfile = extractFeaturesFromEvents(events);
       persistProfile(siteKey, userId, localProfile);
@@ -250,7 +244,6 @@ btnVerify.onclick = async () => {
     status.textContent = `Verifying ${userId}…`;
     console.log("Verify: sending events", events.length);
 
-    // always include client-saved profile as fallback if available
     const profile = getSavedProfile(siteKey, userId);
     const body = { siteKey, userId, events, threshold: 0.72 };
     if (profile) {
@@ -271,7 +264,6 @@ btnVerify.onclick = async () => {
       if (res.status === 404 && (!profile)) {
         status.textContent = `No profile for ${userId} — Enroll first.`;
       } else if (res.status === 404 && profile) {
-        // server 404 even though we sent profile — show message and include server text
         status.textContent = `Verify failed (server 404). Sent local profile as fallback — check console.`;
       } else {
         status.textContent = `Verify failed (server ${res.status})`;
@@ -286,11 +278,13 @@ btnVerify.onclick = async () => {
   }
 };
 
-// small UX: allow Enter in userId to focus textarea
+// allow Enter in userId to focus textarea
 userInput.addEventListener("keydown", (e)=>{ if (e.key === "Enter") { box.focus(); e.preventDefault(); } });
 
-// expose quick debug helper
-window.showGhostProfiles = () => { console.log("savedProfiles keys:", Array.from(savedProfiles.keys())); console.log(window._ghostpassSavedProfiles); };
+// expose start/stop on window for fallback/manual binding
+window.startCapture = startCapture;
+window.stopCapture = stopCapture;
+window.showGhostProfiles = () => { console.log("savedProfiles:", Array.from(savedProfiles.keys())); console.log(window._ghostpassSavedProfiles); };
 
 updateCounter();
 btnStop.classList.add("hidden");
