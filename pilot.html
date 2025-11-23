@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Request a Pilot — GhostPass</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="description" content="Request a GhostPass pilot to evaluate behavioral identity in your environment." />
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    /* small page-specific tweaks (keeps your site look) */
+    .pilot-wrap{max-width:820px;margin:40px auto;padding:20px;background:#111521;border:1px solid #232b38;border-radius:12px}
+    h1{margin:0 0 8px}
+    p.lead{color:#cbd6ee;margin:0 0 18px}
+    form .row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+    form label{flex:1;min-width:200px;display:flex;flex-direction:column;font-size:14px;color:#bcd0ff}
+    input,textarea,select{padding:10px;border-radius:8px;border:1px solid #232b38;background:#0b1018;color:#e8eefb}
+    textarea{min-height:110px}
+    .btn{display:inline-block;padding:10px 14px;border-radius:10px;border:0;background:linear-gradient(135deg,#19e4a8,#14b8ff);color:#051016;font-weight:700;cursor:pointer}
+    .muted{color:#97a6bd;font-size:13px;margin-top:10px}
+    .success{background:#0b2f1f;border:1px solid #0b5; padding:12px;border-radius:8px;color:#bff8d6}
+  </style>
+</head>
+<body>
+  <div class="container pilot-wrap">
+    <a href="/" style="color:#9fb8ff;text-decoration:none;margin-bottom:10px;display:inline-block">&larr; Back</a>
+    <h1>Request a Pilot</h1>
+    <p class="lead">We run 2-week pilots for companies (10–50 workstations) to measure accuracy, false positives, and end-user impact. Fill this short form and we’ll follow up within 48 hours.</p>
+
+    <!-- Replace the `https://formspree.io/f/your-id` with your Formspree form endpoint.
+         If you don't have Formspree, temporarily set action to mailto:hello@ghostpass.ai (see notes below). -->
+    <form id="pilotForm" action="https://formspree.io/f/movbpkyn" method="POST">
+      <div class="row">
+        <label>Full name
+          <input required type="text" name="name" placeholder="Jane Doe" />
+        </label>
+
+        <label>Work email
+          <input required type="email" name="email" placeholder="jane@company.com" />
+        </label>
+      </div>
+
+      <div class="row">
+        <label>Company
+          <input required type="text" name="company" placeholder="ACME Corp" />
+        </label>
+
+        <label># Employees (approx)
+          <select name="employees">
+            <option value="1-50">1–50</option>
+            <option value="51-200">51–200</option>
+            <option value="201-1000">201–1000</option>
+            <option value="1000+">1000+</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="row">
+        <label>Use case (select)
+          <select name="use_case">
+            <option value="insider-risk">Insider risk / account sharing</option>
+            <option value="otac">Account takeover detection</option>
+            <option value="remote-work">Remote workforce verification</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+
+        <label>Preferred contact
+          <select name="contact_pref">
+            <option value="email">Email</option>
+            <option value="call">Call</option>
+            <option value="demo">Schedule demo</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="row">
+        <label style="flex:1 1 100%;">Notes / Comment
+          <textarea name="message" placeholder="Describe your environment or goals (optional)"></textarea>
+        </label>
+      </div>
+
+      <!-- Hidden fields for internal tracking -->
+      <input type="hidden" name="source" value="website_pilot_form" />
+      <div style="display:flex;gap:12px;align-items:center">
+        <button class="btn" type="submit">Request Pilot</button>
+        <div id="statusBanner" class="muted" aria-live="polite"></div>
+      </div>
+
+      <p class="muted">Privacy: GhostPass never stores raw typed content. Pilot data is scoped to your tenant and deleted on request.</p>
+    </form>
+
+    <div id="successBox" class="success hidden" style="margin-top:14px;display:none">
+      Thanks — your pilot request is received. We’ll email you within 48 hours to schedule next steps.
+    </div>
+  </div>
+
+<script>
+  // UX: intercept the submit to show a nicer message without redirect (works with Formspree)
+  const form = document.getElementById('pilotForm');
+  const banner = document.getElementById('statusBanner');
+  const successBox = document.getElementById('successBox');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    banner.textContent = "Sending…";
+    const data = new FormData(form);
+
+    try {
+      // Replace this fetch target with the Formspree action or other endpoint.
+      const action = form.getAttribute('action');
+      const res = await fetch(action, { method: 'POST', body: data, headers: { 'Accept': 'application/json' } });
+      if (res.ok) {
+        banner.textContent = "";
+        successBox.style.display = "block";
+        form.style.display = "none";
+      } else {
+        const body = await res.json().catch(()=>null);
+        banner.textContent = "Submission failed. Please email hello@ghostpass.ai";
+        console.warn("pilot submit failed", res.status, body);
+      }
+    } catch (err) {
+      console.error(err);
+      banner.textContent = "Network error. Please email hello@ghostpass.ai";
+    }
+  });
+</script>
+</body>
+</html>
